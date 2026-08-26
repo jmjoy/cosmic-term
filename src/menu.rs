@@ -13,7 +13,7 @@ use cosmic::{
     widget::{
         self, divider,
         menu::{ItemHeight, ItemWidth},
-        responsive_menu_bar, segmented_button,
+        responsive_menu_bar, pane_grid,
     },
 };
 use std::{collections::HashMap, sync::LazyLock};
@@ -33,7 +33,7 @@ pub struct MenuState {
 pub fn context_menu<'a>(
     config: &Config,
     key_binds: &HashMap<KeyBind, Action>,
-    entity: segmented_button::Entity,
+    pane: pane_grid::Pane,
     link: Option<String>,
 ) -> Element<'a, Message> {
     let find_key = |action: &Action| -> String {
@@ -62,7 +62,7 @@ pub fn context_menu<'a>(
                 .class(theme::Text::Custom(key_style))
                 .into(),
         ])
-        .on_press(Message::TabContextAction(entity, action))
+        .on_press(Message::TabContextAction(pane, action))
     };
 
     let menu_checkbox = |label, value, action| {
@@ -70,11 +70,11 @@ pub fn context_menu<'a>(
             widget::text(label).into(),
             widget::space::horizontal().into(),
             widget::toggler(value)
-                .on_toggle(move |_| Message::TabContextAction(entity, action))
+                .on_toggle(move |_| Message::TabContextAction(pane, action))
                 .size(16.0)
                 .into(),
         ])
-        .on_press(Message::TabContextAction(entity, action))
+        .on_press(Message::TabContextAction(pane, action))
     };
 
     let mut rows = vec![

@@ -44,7 +44,8 @@ version = "0.19"
 features = ["monospace_fallback", "shape-run-cache"]
 
 [dependencies.libcosmic]
-git = "https://github.com/pop-os/libcosmic.git"
+git = "https://github.com/jmjoy/libcosmic.git"
+branch = "hack"
 default-features = false
 #TODO: a11y feature crashes file chooser dialog
 features = [
@@ -73,14 +74,7 @@ password_manager = ["secret-service", "thiserror", "secstr"]
 inherits = "release"
 debug = true
 
-# [patch.'https://github.com/pop-os/libcosmic']
-# libcosmic = { path = "../libcosmic" }
-# cosmic-config = { path = "../libcosmic/cosmic-config" }
-# cosmic-theme = { path = "../libcosmic/cosmic-theme" }
-# iced_futures = { path = "../libcosmic/iced/futures" }
-# iced_winit = { path = "../libcosmic/iced/winit" }
-# libcosmic = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
-# cosmic-config = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
-# cosmic-theme = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
-# iced_futures = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
-# iced_winit = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
+[patch.'https://github.com/pop-os/libcosmic']
+libcosmic = { git = "https://github.com/jmjoy/libcosmic.git", branch = "hack" }
+cosmic-config = { git = "https://github.com/jmjoy/libcosmic.git", branch = "hack" }
+cosmic-theme = { git = "https://github.com/jmjoy/libcosmic.git", branch = "hack" }

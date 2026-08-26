@@ -96,9 +96,9 @@ impl From<Size> for WindowSize {
 
 #[derive(Clone)]
 pub struct EventProxy(
-    pane_grid::Pane,
     segmented_button::Entity,
-    mpsc::UnboundedSender<(pane_grid::Pane, segmented_button::Entity, Event)>,
+    pane_grid::Pane,
+    mpsc::UnboundedSender<(segmented_button::Entity, pane_grid::Pane, Event)>,
 );
 
 impl EventListener for EventProxy {
@@ -153,57 +153,141 @@ fn convert_color(colors: &Colors, color: Color) -> cosmic_text::Color {
 
 type TabModel = segmented_button::Model<segmented_button::SingleSelect>;
 
-pub struct TerminalPaneGrid {
-    pub panes: pane_grid::State<TabModel>,
-    pub panes_created: usize,
-    focus: pane_grid::Pane,
+/// The content of a single split pane within a tab.
+pub struct PaneContent {
+    pub id: cosmic::widget::Id,
+    pub terminal: Option<Mutex<Terminal>>,
 }
 
-impl TerminalPaneGrid {
-    pub fn new(model: TabModel) -> Self {
-        let (panes, pane) = pane_grid::State::new(model);
-        let mut terminal_ids = HashMap::new();
-        terminal_ids.insert(pane, cosmic::widget::Id::unique());
+/// Per-tab state: each tab owns an independent pane grid, so splits only
+/// affect the tab they were created in.
+pub struct TerminalTab {
+    pub panes: pane_grid::State<PaneContent>,
+    pub focus: pane_grid::Pane,
+}
 
-        Self {
-            panes,
-            panes_created: 1,
-            focus: pane,
-        }
+impl TerminalTab {
+    pub fn new() -> Self {
+        let content = PaneContent {
+            id: cosmic::widget::Id::unique(),
+            terminal: None,
+        };
+        let (panes, pane) = pane_grid::State::new(content);
+        Self { panes, focus: pane }
     }
-    pub fn active(&self) -> Option<&TabModel> {
-        self.panes.get(self.focus)
+}
+
+/// Window-level tabs. Every tab entity stores a [`TerminalTab`] as its data.
+pub struct Tabs {
+    pub model: TabModel,
+}
+
+impl Tabs {
+    /// Starts out empty; the first tab is created when the terminal event
+    /// channel arrives (`TabNew`).
+    pub fn new() -> Self {
+        let model = segmented_button::ModelBuilder::default().build();
+        Self { model }
     }
-    pub fn active_mut(&mut self) -> Option<&mut TabModel> {
-        self.panes.get_mut(self.focus)
+
+    /// Append a new empty tab and activate it.
+    pub fn insert_tab(&mut self) -> segmented_button::Entity {
+        let entity = self.model.insert().closable().activate().id();
+        self.model.data_set::<TerminalTab>(entity, TerminalTab::new());
+        entity
     }
+
+    pub fn active_entity(&self) -> segmented_button::Entity {
+        self.model.active()
+    }
+
+    pub fn active(&self) -> Option<&TerminalTab> {
+        self.model.data::<TerminalTab>(self.model.active())
+    }
+
+    pub fn active_mut(&mut self) -> Option<&mut TerminalTab> {
+        self.model.data_mut::<TerminalTab>(self.model.active())
+    }
+
+    /// The focused pane of the active tab.
+    pub fn focused(&self) -> pane_grid::Pane {
+        self.active().expect("at least one tab is always open").focus
+    }
+
+    /// Set the focused pane of the active tab and refresh terminal focus.
     pub fn set_focus(&mut self, pane: pane_grid::Pane) {
-        self.focus = pane;
+        if let Some(tab) = self.active_mut() {
+            tab.focus = pane;
+        }
         self.update_terminal_focus();
     }
-    pub fn focused(&self) -> pane_grid::Pane {
-        self.focus
+
+    /// The terminal of the focused pane of the active tab.
+    pub fn active_terminal(&self) -> Option<&Mutex<Terminal>> {
+        self.active()
+            .and_then(|tab| tab.panes.get(tab.focus))
+            .and_then(|content| content.terminal.as_ref())
     }
 
-    pub fn update_terminal_focus(&self) {
-        for (pane, tab_model) in self.panes.panes.iter() {
-            let entity = tab_model.active();
-            if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                let mut terminal = terminal.lock().unwrap();
-                terminal.set_focused(self.focus == *pane);
-                terminal.update();
+    /// The terminal of the given pane of the active tab.
+    pub fn pane_terminal(&self, pane: pane_grid::Pane) -> Option<&Mutex<Terminal>> {
+        self.active()
+            .and_then(|tab| tab.panes.get(pane))
+            .and_then(|content| content.terminal.as_ref())
+    }
+
+    /// Locate a terminal anywhere in any tab by its (tab, pane) address.
+    pub fn find_terminal(
+        &self,
+        entity: segmented_button::Entity,
+        pane: pane_grid::Pane,
+    ) -> Option<&Mutex<Terminal>> {
+        self.model
+            .data::<TerminalTab>(entity)
+            .and_then(|tab| tab.panes.get(pane))
+            .and_then(|content| content.terminal.as_ref())
+    }
+
+    /// Run `f` on every terminal across every tab.
+    pub fn for_each_terminal<F>(&self, mut f: F)
+    where
+        F: FnMut(&Mutex<Terminal>),
+    {
+        for entity in self.model.iter() {
+            if let Some(tab) = self.model.data::<TerminalTab>(entity) {
+                for content in tab.panes.panes.values() {
+                    if let Some(terminal) = &content.terminal {
+                        f(terminal);
+                    }
+                }
             }
         }
     }
-    pub fn unfocus_all_terminals(&self) {
-        for tab_model in self.panes.panes.values() {
-            let entity = tab_model.active();
-            if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                let mut terminal = terminal.lock().unwrap();
-                terminal.set_focused(false);
-                terminal.update();
+
+    /// Refresh which terminal reports itself as focused: only the focused
+    /// pane of the active tab is focused; everything else is not.
+    pub fn update_terminal_focus(&self) {
+        let active_entity = self.model.active();
+        for entity in self.model.iter() {
+            let tab_focused = entity == active_entity;
+            if let Some(tab) = self.model.data::<TerminalTab>(entity) {
+                for (pane, content) in tab.panes.panes.iter() {
+                    if let Some(terminal) = &content.terminal {
+                        let mut terminal = terminal.lock().unwrap();
+                        terminal.set_focused(tab_focused && *pane == tab.focus);
+                        terminal.update();
+                    }
+                }
             }
         }
+    }
+
+    pub fn unfocus_all_terminals(&self) {
+        self.for_each_terminal(|terminal| {
+            let mut terminal = terminal.lock().unwrap();
+            terminal.set_focused(false);
+            terminal.update();
+        });
     }
 }
 
@@ -267,9 +351,9 @@ impl Terminal {
     //TODO: error handling
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        pane: pane_grid::Pane,
         entity: segmented_button::Entity,
-        event_tx: mpsc::UnboundedSender<(pane_grid::Pane, segmented_button::Entity, Event)>,
+        pane: pane_grid::Pane,
+        event_tx: mpsc::UnboundedSender<(segmented_button::Entity, pane_grid::Pane, Event)>,
         config: Config,
         options: Options,
         app_config: &AppConfig,
@@ -321,7 +405,7 @@ impl Terminal {
             cell_width,
             cell_height,
         };
-        let event_proxy = EventProxy(pane, entity, event_tx);
+        let event_proxy = EventProxy(entity, pane, event_tx);
         let term = Arc::new(FairMutex::new(Term::new(
             config,
             &size,

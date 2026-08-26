@@ -7,7 +7,6 @@ use cosmic::iced::core::keyboard::key::Named;
 use cosmic::iced::keyboard::key::Physical;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::menu::key_bind::KeyBind;
-use cosmic::widget::pane_grid::Pane;
 use cosmic::widget::segmented_button::ReorderEvent;
 use cosmic::{
     Application, ApplicationExt, Element, action,
@@ -65,7 +64,7 @@ mod localize;
 use menu::menu_bar;
 mod menu;
 
-use terminal::{Terminal, TerminalPaneGrid, TerminalScroll};
+use terminal::{PaneContent, Tabs, Terminal, TerminalScroll, TerminalTab};
 mod terminal;
 
 use terminal_box::terminal_box;
@@ -290,17 +289,17 @@ pub enum Action {
 }
 
 impl Action {
-    fn message(&self, entity_opt: Option<segmented_button::Entity>) -> Message {
+    fn message(&self, pane_opt: Option<pane_grid::Pane>) -> Message {
         match self {
             Self::About => Message::ToggleContextPage(ContextPage::About),
-            Self::ClearScrollback => Message::ClearScrollback(entity_opt),
+            Self::ClearScrollback => Message::ClearScrollback(pane_opt),
             Self::ColorSchemes(color_scheme_kind) => {
                 Message::ToggleContextPage(ContextPage::ColorSchemes(*color_scheme_kind))
             }
-            Self::Copy => Message::Copy(entity_opt),
+            Self::Copy => Message::Copy(pane_opt),
             Self::CopyUrlByMenu => Message::CopyUrlByMenu,
-            Self::CopyOrSigint => Message::CopyOrSigint(entity_opt),
-            Self::CopyPrimary => Message::CopyPrimary(entity_opt),
+            Self::CopyOrSigint => Message::CopyOrSigint(pane_opt),
+            Self::CopyPrimary => Message::CopyPrimary(pane_opt),
             Self::Find => Message::Find(true),
             Self::KeyboardShortcuts => Message::ToggleContextPage(ContextPage::KeyboardShortcuts),
             Self::LaunchUrlByMenu => Message::LaunchUrlByMenu,
@@ -313,11 +312,11 @@ impl Action {
             Self::PaneToggleMaximized => Message::PaneToggleMaximized,
             #[cfg(feature = "password_manager")]
             Self::PasswordManager => Message::ToggleContextPage(ContextPage::PasswordManager),
-            Self::Paste => Message::Paste(entity_opt),
-            Self::PastePrimary => Message::PastePrimary(entity_opt),
+            Self::Paste => Message::Paste(pane_opt),
+            Self::PastePrimary => Message::PastePrimary(pane_opt),
             Self::ProfileOpen(profile_id) => Message::ProfileOpen(*profile_id),
             Self::Profiles => Message::ToggleContextPage(ContextPage::Profiles),
-            Self::SelectAll => Message::SelectAll(entity_opt),
+            Self::SelectAll => Message::SelectAll(pane_opt),
             Self::Settings => Message::ToggleContextPage(ContextPage::Settings),
             Self::ShowHeaderBar(show_headerbar) => Message::ShowHeaderBar(*show_headerbar),
             Self::TabActivate0 => Message::TabActivateJump(0),
@@ -329,7 +328,7 @@ impl Action {
             Self::TabActivate6 => Message::TabActivateJump(6),
             Self::TabActivate7 => Message::TabActivateJump(7),
             Self::TabActivate8 => Message::TabActivateJump(8),
-            Self::TabClose => Message::TabClose(entity_opt),
+            Self::TabClose => Message::TabClose(None),
             Self::TabNew => Message::TabNew,
             Self::TabNewNoProfile => Message::TabNewNoProfile,
             Self::TabNext => Message::TabNext,
@@ -356,7 +355,7 @@ impl MenuAction for Action {
 #[derive(Clone, Debug)]
 pub enum Message {
     AppTheme(AppTheme),
-    ClearScrollback(Option<segmented_button::Entity>),
+    ClearScrollback(Option<pane_grid::Pane>),
     ColorSchemeCollapse,
     ColorSchemeDelete(ColorSchemeKind, ColorSchemeId),
     ColorSchemeExpand(ColorSchemeKind, Option<ColorSchemeId>),
@@ -368,9 +367,9 @@ pub enum Message {
     ColorSchemeRenameSubmit,
     ColorSchemeTabActivate(widget::segmented_button::Entity),
     Config(Box<Config>),
-    Copy(Option<segmented_button::Entity>),
-    CopyOrSigint(Option<segmented_button::Entity>),
-    CopyPrimary(Option<segmented_button::Entity>),
+    Copy(Option<pane_grid::Pane>),
+    CopyOrSigint(Option<pane_grid::Pane>),
+    CopyPrimary(Option<pane_grid::Pane>),
     CopyUrlByMenu,
     DefaultBoldFontWeight(usize),
     DefaultDimFontWeight(usize),
@@ -380,12 +379,12 @@ pub enum Message {
     DefaultFontWeight(usize),
     DefaultZoomStep(usize),
     DialogMessage(Box<DialogMessage>), // DialogMessage is huge, so we use a box to make the size of this enum smaller on the stack
-    Drop(Option<(pane_grid::Pane, segmented_button::Entity, DndDrop)>),
+    Drop(Option<(pane_grid::Pane, DndDrop)>),
     Find(bool),
     FindNext,
     FindPrevious,
     FindSearchValueChanged(String),
-    MiddleClick(pane_grid::Pane, Option<segmented_button::Entity>),
+    MiddleClick(pane_grid::Pane),
     FocusFollowMouse(bool),
     Key(Modifiers, Physical, Key),
     LaunchUrl(String),
@@ -410,9 +409,9 @@ pub enum Message {
     PasswordManager(password_manager::PasswordManagerMessage),
     #[cfg(feature = "password_manager")]
     PasswordPaste(secstr::SecUtf8, pane_grid::Pane),
-    Paste(Option<segmented_button::Entity>),
-    PastePrimary(Option<segmented_button::Entity>),
-    PasteValue(Option<segmented_button::Entity>, String),
+    Paste(Option<pane_grid::Pane>),
+    PastePrimary(Option<pane_grid::Pane>),
+    PasteValue(Option<pane_grid::Pane>, String),
     ProfileCollapse(ProfileId),
     ProfileCommand(ProfileId, String),
     ProfileDirectory(ProfileId, String),
@@ -424,9 +423,9 @@ pub enum Message {
     ProfileRemove(ProfileId),
     ProfileSyntaxTheme(ProfileId, ColorSchemeKind, usize),
     ProfileTabTitle(ProfileId, String),
-    ReorderTab(Pane, ReorderEvent),
+    ReorderTab(ReorderEvent),
     Surface(surface::Action),
-    SelectAll(Option<segmented_button::Entity>),
+    SelectAll(Option<pane_grid::Pane>),
     ShowAdvancedFontSettings(bool),
     ShowHeaderBar(bool),
     ShowPaneBorders(bool),
@@ -436,14 +435,16 @@ pub enum Message {
     TabActivate(segmented_button::Entity),
     TabActivateJump(usize),
     TabClose(Option<segmented_button::Entity>),
-    TabContextAction(segmented_button::Entity, Action),
+    TabContextAction(pane_grid::Pane, Action),
     TabContextMenu(pane_grid::Pane, Option<MenuState>),
     TabNew,
     TabNewNoProfile,
     TabNext,
     TabPrev,
-    TermEvent(pane_grid::Pane, segmented_button::Entity, TermEvent),
-    TermEventTx(mpsc::UnboundedSender<(pane_grid::Pane, segmented_button::Entity, TermEvent)>),
+    TermEvent(segmented_button::Entity, pane_grid::Pane, TermEvent),
+    TermEventTx(
+        mpsc::UnboundedSender<(segmented_button::Entity, pane_grid::Pane, TermEvent)>,
+    ),
     ToggleFullscreen,
     ToggleContextPage(ContextPage),
     UpdateDefaultProfile((bool, ProfileId)),
@@ -480,7 +481,7 @@ struct ShortcutConflict {
 pub struct App {
     core: Core,
     about: About,
-    pane_model: TerminalPaneGrid,
+    tabs: Tabs,
     config_handler: Option<cosmic_config::Config>,
     config: Config,
     shortcuts_config: shortcuts::ShortcutsConfig,
@@ -503,12 +504,11 @@ pub struct App {
     themes: HashMap<(String, ColorSchemeKind), TermColors>,
     context_page: ContextPage,
     dialog_opt: Option<Dialog<Message>>,
-    terminal_ids: HashMap<pane_grid::Pane, widget::Id>,
     find: bool,
     find_search_id: widget::Id,
     find_search_value: String,
     term_event_tx_opt:
-        Option<mpsc::UnboundedSender<(pane_grid::Pane, segmented_button::Entity, TermEvent)>>,
+        Option<mpsc::UnboundedSender<(segmented_button::Entity, pane_grid::Pane, TermEvent)>>,
     startup_options: Option<tty::Options>,
     term_config: term::Config,
     color_scheme_errors: Vec<String>,
@@ -528,8 +528,8 @@ pub struct App {
     modifiers: Modifiers,
     context_menu_popup: Option<(
         window::Id,
-        pane_grid::Pane,
         segmented_button::Entity,
+        pane_grid::Pane,
         Option<String>,
         widget::Id,
         cosmic::iced::Point,
@@ -592,25 +592,15 @@ impl App {
     }
 
     fn reset_terminal_panes_zoom(&mut self) {
-        for (_pane, tab_model) in self.pane_model.panes.iter() {
-            for entity in tab_model.iter() {
-                if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                    let mut terminal = terminal.lock().unwrap();
-                    terminal.set_zoom_adj(0);
-                }
-            }
-        }
+        self.tabs.for_each_terminal(|terminal| {
+            let mut terminal = terminal.lock().unwrap();
+            terminal.set_zoom_adj(0);
+        });
     }
 
     fn reset_active_pane_zoom(&mut self) {
-        if let Some(tab_model) = self.pane_model.active() {
-            for entity in tab_model.iter() {
-                if tab_model.is_active(entity)
-                    && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity)
-                {
-                    terminal.lock().unwrap().set_zoom_adj(0);
-                }
-            }
+        if let Some(terminal) = self.tabs.active_terminal() {
+            terminal.lock().unwrap().set_zoom_adj(0);
         }
     }
 
@@ -690,14 +680,10 @@ impl App {
 
         // Set config of all tabs
         let color_scheme_kind = self.config.color_scheme_kind(&theme);
-        for (_pane, tab_model) in self.pane_model.panes.iter() {
-            for entity in tab_model.iter() {
-                if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                    let mut terminal = terminal.lock().unwrap();
-                    terminal.set_config(&self.config, color_scheme_kind, &self.themes);
-                }
-            }
-        }
+        self.tabs.for_each_terminal(|terminal| {
+            let mut terminal = terminal.lock().unwrap();
+            terminal.set_config(&self.config, color_scheme_kind, &self.themes);
+        });
 
         // Set headerbar state
         self.core.window.show_headerbar = self.config.show_headerbar;
@@ -711,25 +697,15 @@ impl App {
         // recalculate the pane due to the changes of zoom_adj value
         // but only for the active pane/tab
         let color_scheme_kind = self.config.color_scheme_kind(self.core.system_theme());
-        if let Some(tab_model) = self.pane_model.active() {
-            for entity in tab_model.iter() {
-                if tab_model.is_active(entity)
-                    && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity)
-                {
-                    let mut terminal = terminal.lock().unwrap();
-                    let current_zoom_adj = terminal.zoom_adj();
-                    match zoom_message {
-                        Message::ZoomIn => {
-                            terminal.set_zoom_adj(current_zoom_adj.saturating_add(1))
-                        }
-                        Message::ZoomOut => {
-                            terminal.set_zoom_adj(current_zoom_adj.saturating_sub(1))
-                        }
-                        _ => {}
-                    }
-                    terminal.set_config(&self.config, color_scheme_kind, &self.themes);
-                }
+        if let Some(terminal) = self.tabs.active_terminal() {
+            let mut terminal = terminal.lock().unwrap();
+            let current_zoom_adj = terminal.zoom_adj();
+            match zoom_message {
+                Message::ZoomIn => terminal.set_zoom_adj(current_zoom_adj.saturating_add(1)),
+                Message::ZoomOut => terminal.set_zoom_adj(current_zoom_adj.saturating_sub(1)),
+                _ => {}
             }
+            terminal.set_config(&self.config, color_scheme_kind, &self.themes);
         }
         Task::none()
     }
@@ -779,7 +755,11 @@ impl App {
             }
 
             Task::none()
-        } else if let Some(terminal_id) = self.terminal_ids.get(&self.pane_model.focused()).cloned()
+        } else if let Some(terminal_id) = self
+            .tabs
+            .active()
+            .and_then(|tab| tab.panes.get(tab.focus))
+            .map(|content| content.id.clone())
         {
             widget::text_input::focus(terminal_id)
         } else {
@@ -787,37 +767,24 @@ impl App {
         }
     }
 
-    // Call this any time the tab changes
-    fn update_title(&mut self, pane: Option<pane_grid::Pane>) -> Task<Message> {
-        let pane = pane.unwrap_or(self.pane_model.focused());
-        if let Some(tab_model) = self.pane_model.panes.get(pane) {
-            let (header_title, window_title) = match tab_model.text(tab_model.active()) {
-                Some(tab_title) => (
-                    tab_title.to_string(),
-                    format!("{tab_title} — {}", fl!("cosmic-terminal")),
-                ),
-                None => (String::new(), fl!("cosmic-terminal")),
-            };
-            self.set_header_title(header_title);
-            Task::batch([
-                if let Some(window_id) = self.core.main_window_id() {
-                    self.set_window_title(window_title, window_id)
-                } else {
-                    Task::none()
-                },
-                self.update_focus(),
-            ])
-        } else {
-            log::error!("Failed to get the specific pane");
-            Task::batch([
-                if let Some(window_id) = self.core.main_window_id() {
-                    self.set_window_title(fl!("cosmic-terminal"), window_id)
-                } else {
-                    Task::none()
-                },
-                self.update_focus(),
-            ])
-        }
+    // Call this any time the active tab changes
+    fn update_title(&mut self) -> Task<Message> {
+        let (header_title, window_title) = match self.tabs.model.text(self.tabs.model.active()) {
+            Some(tab_title) => (
+                tab_title.to_string(),
+                format!("{tab_title} — {}", fl!("cosmic-terminal")),
+            ),
+            None => (String::new(), fl!("cosmic-terminal")),
+        };
+        self.set_header_title(header_title);
+        Task::batch([
+            if let Some(window_id) = self.core.main_window_id() {
+                self.set_window_title(window_title, window_id)
+            } else {
+                Task::none()
+            },
+            self.update_focus(),
+        ])
     }
 
     fn set_curr_font_weights_and_stretches(&mut self) {
@@ -1543,23 +1510,59 @@ impl App {
     }
 
     fn active_terminal_working_directory(&self) -> Option<PathBuf> {
-        let tab_model = self.pane_model.active()?;
-        let entity = tab_model.active();
-        let terminal = tab_model.data::<Mutex<Terminal>>(entity)?;
+        let terminal = self.tabs.active_terminal()?;
         let terminal = terminal.lock().unwrap();
         terminal.working_directory()
+    }
+
+    /// Resolve a terminal by an optional pane override: `None` targets the
+    /// focused pane of the active tab.
+    fn terminal_for_pane_opt(
+        &self,
+        pane_opt: Option<pane_grid::Pane>,
+    ) -> Option<&Mutex<Terminal>> {
+        match pane_opt {
+            Some(pane) => self.tabs.pane_terminal(pane),
+            None => self.tabs.active_terminal(),
+        }
+    }
+
+    /// Close a single pane within the given tab; closes the whole tab when
+    /// its last pane is gone, and closes the window when the last tab is gone.
+    fn close_pane(
+        &mut self,
+        entity: segmented_button::Entity,
+        pane: pane_grid::Pane,
+    ) -> Task<Message> {
+        let empty = match self.tabs.model.data_mut::<TerminalTab>(entity) {
+            Some(tab) => {
+                if let Some((_state, sibling)) = tab.panes.close(pane) {
+                    if tab.focus == pane {
+                        tab.focus = sibling;
+                    }
+                    false
+                } else {
+                    true
+                }
+            }
+            None => false,
+        };
+
+        if empty {
+            return self.update(Message::TabClose(Some(entity)));
+        }
+
+        self.tabs.update_terminal_focus();
+        self.update_title()
     }
 
     fn create_and_focus_new_terminal(
         &mut self,
         pane: pane_grid::Pane,
         profile_id_opt: Option<ProfileId>,
-        inherit_working_directory: bool,
+        inherited_working_directory: Option<PathBuf>,
     ) -> Task<Message> {
-        let inherited_working_directory = inherit_working_directory
-            .then(|| self.active_terminal_working_directory())
-            .flatten();
-        self.pane_model.set_focus(pane);
+        self.tabs.set_focus(pane);
         match &self.term_event_tx_opt {
             Some(term_event_tx) => {
                 let color_scheme_kind = self.config.color_scheme_kind(self.core.system_theme());
@@ -1577,8 +1580,7 @@ impl App {
                     });
                 match colors {
                     Some(colors) => {
-                        let current_pane = self.pane_model.focused();
-                        if let Some(tab_model) = self.pane_model.active_mut() {
+                        let entity = self.tabs.active_entity();
                             let (options, tab_title_override) = if let Some(profile) =
                                 profile_id_opt
                                     .and_then(|profile_id| self.config.profiles.get(&profile_id))
@@ -1621,82 +1623,95 @@ impl App {
                                 (options, None)
                             };
 
-                            let entity = tab_model
-                                .insert()
-                                .text(
+                            // Give freshly created tabs a title; do not clobber
+                            // the title of an existing tab when this fills a
+                            // newly split pane.
+                            let untitled = self
+                                .tabs
+                                .model
+                                .text(entity)
+                                .is_none_or(|text| text.is_empty());
+                            if untitled {
+                                self.tabs.model.text_set(
+                                    entity,
                                     tab_title_override
                                         .clone()
                                         .unwrap_or_else(|| fl!("new-terminal")),
-                                )
-                                .closable()
-                                .activate()
-                                .id();
-                            match Terminal::new(
-                                current_pane,
-                                entity,
-                                term_event_tx.clone(),
-                                self.term_config.clone(),
-                                options,
-                                &self.config,
-                                *colors,
-                                profile_id_opt,
-                                tab_title_override,
-                            ) {
-                                Ok(mut terminal) => {
-                                    terminal.set_config(
-                                        &self.config,
-                                        color_scheme_kind,
-                                        &self.themes,
-                                    );
-                                    tab_model
-                                        .data_set::<Mutex<Terminal>>(entity, Mutex::new(terminal));
-                                }
-                                Err(err) if profile_id_opt.is_some() => {
-                                    // Create a tab without a profile if the selected
-                                    // profile doesn't work
-                                    let name = profile_id_opt
-                                        .and_then(|id| self.config.profiles.get(&id))
-                                        .map(|profile| profile.name.as_str())
-                                        .unwrap_or_default();
-                                    log::error!(
-                                        "failed to open terminal with profile `{}`: {}",
-                                        name,
-                                        err
-                                    );
-
-                                    // TabClose focuses the nearest tab which would be incorrect
-                                    // in this specific case as it would unfocus the new tab
-                                    // created by TabNewNoProfile
-                                    // TabClose can also cause the terminal app to close if it
-                                    // closes the only open tab. This would close cosmic term
-                                    // if launched with an invalid profile (issue #274)
-                                    tab_model.remove(entity);
-                                    return self.update(Message::TabNewNoProfile);
-                                }
-                                Err(err) => {
-                                    log::error!("failed to open terminal: {}", err);
-                                    // Clean up partially created tab
-                                    return self.update(Message::TabClose(Some(entity)));
-                                }
+                                );
                             }
-                        } else {
-                            log::error!("Found no active pane");
+
+                            let content = self
+                                .tabs
+                                .active_mut()
+                                .and_then(|tab| tab.panes.get_mut(pane));
+                            if let Some(content) = content {
+                                match Terminal::new(
+                                    entity,
+                                    pane,
+                                    term_event_tx.clone(),
+                                    self.term_config.clone(),
+                                    options,
+                                    &self.config,
+                                    *colors,
+                                    profile_id_opt,
+                                    tab_title_override,
+                                ) {
+                                    Ok(mut terminal) => {
+                                        terminal.set_config(
+                                            &self.config,
+                                            color_scheme_kind,
+                                            &self.themes,
+                                        );
+                                        content.terminal = Some(Mutex::new(terminal));
+                                    }
+                                    Err(err) if profile_id_opt.is_some() => {
+                                        // Create a tab without a profile if the selected
+                                        // profile doesn't work
+                                        let name = profile_id_opt
+                                            .and_then(|id| self.config.profiles.get(&id))
+                                            .map(|profile| profile.name.as_str())
+                                            .unwrap_or_default();
+                                        log::error!(
+                                            "failed to open terminal with profile `{}`: {}",
+                                            name,
+                                            err
+                                        );
+
+                                        // TabClose focuses the nearest tab which would be incorrect
+                                        // in this specific case as it would unfocus the new tab
+                                        // created by TabNewNoProfile
+                                        // TabClose can also cause the terminal app to close if it
+                                        // closes the only open tab. This would close cosmic term
+                                        // if launched with an invalid profile (issue #274)
+                                        self.tabs
+                                            .model
+                                            .text_set(entity, fl!("new-terminal"));
+                                        return self.update(Message::TabNewNoProfile);
+                                    }
+                                    Err(err) => {
+                                        log::error!("failed to open terminal: {}", err);
+                                        // Clean up the pane which failed to spawn a shell
+                                        return self.close_pane(entity, pane);
+                                    }
+                                }
+                            } else {
+                                log::error!("Found no active pane");
+                            }
+                        }
+                        None => {
+                            log::error!(
+                                "failed to find terminal theme {:?}",
+                                self.config.syntax_theme(color_scheme_kind, profile_id_opt)
+                            );
+                            //TODO: fall back to known good theme
                         }
                     }
-                    None => {
-                        log::error!(
-                            "failed to find terminal theme {:?}",
-                            self.config.syntax_theme(color_scheme_kind, profile_id_opt)
-                        );
-                        //TODO: fall back to known good theme
-                    }
+                }
+                None => {
+                    log::warn!("tried to create new tab before having event channel");
                 }
             }
-            None => {
-                log::warn!("tried to create new tab before having event channel");
-            }
-        }
-        self.update_title(Some(pane))
+        self.update_title()
     }
 }
 
@@ -1833,9 +1848,7 @@ impl Application for App {
             zoom_steps.push(zoom_step);
         }
 
-        let pane_model = TerminalPaneGrid::new(segmented_button::ModelBuilder::default().build());
-        let mut terminal_ids = HashMap::new();
-        terminal_ids.insert(pane_model.focused(), widget::Id::unique());
+        let tabs = Tabs::new();
 
         let about = About::default()
             .name(fl!("cosmic-terminal"))
@@ -1858,7 +1871,7 @@ impl Application for App {
         let mut app = Self {
             core,
             about,
-            pane_model,
+            tabs,
             config_handler: flags.config_handler,
             config: flags.config,
             shortcuts_config: flags.shortcuts_config,
@@ -1881,7 +1894,6 @@ impl Application for App {
             themes: HashMap::new(),
             context_page: ContextPage::Settings,
             dialog_opt: None,
-            terminal_ids,
             find: false,
             find_search_id: widget::Id::unique(),
             find_search_value: String::new(),
@@ -1909,7 +1921,7 @@ impl Application for App {
         };
 
         app.set_curr_font_weights_and_stretches();
-        let command = Task::batch([app.update_config(), app.update_title(None)]);
+        let command = Task::batch([app.update_config(), app.update_title()]);
 
         (app, command)
     }
@@ -1981,14 +1993,11 @@ impl Application for App {
                 config_set!(app_theme, app_theme);
                 return self.update_config();
             }
-            Message::ClearScrollback(entity_opt) => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = entity_opt.unwrap_or_else(|| tab_model.active());
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let terminal = terminal.lock().unwrap();
-                        let mut term = terminal.term.lock();
-                        term.grid_mut().clear_history();
-                    }
+            Message::ClearScrollback(pane_opt) => {
+                if let Some(terminal) = self.terminal_for_pane_opt(pane_opt) {
+                    let terminal = terminal.lock().unwrap();
+                    let mut term = terminal.term.lock();
+                    term.grid_mut().clear_history();
                 }
             }
             Message::ColorSchemeCollapse => {
@@ -2201,41 +2210,35 @@ impl Application for App {
                     return self.update_config();
                 }
             }
-            Message::Copy(entity_opt) => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = entity_opt.unwrap_or_else(|| tab_model.active());
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let terminal = terminal.lock().unwrap();
-                        let term = terminal.term.lock();
-                        if let Some(text) = term.selection_to_string() {
-                            return Task::batch([clipboard::write(text), self.update_focus()]);
-                        }
+            Message::Copy(pane_opt) => {
+                if let Some(terminal) = self.terminal_for_pane_opt(pane_opt) {
+                    let terminal = terminal.lock().unwrap();
+                    let term = terminal.term.lock();
+                    if let Some(text) = term.selection_to_string() {
+                        return Task::batch([clipboard::write(text), self.update_focus()]);
                     }
                 } else {
                     log::warn!("Failed to get focused pane");
                 }
                 return self.update_focus();
             }
-            Message::CopyOrSigint(entity_opt) => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = entity_opt.unwrap_or_else(|| tab_model.active());
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let mut terminal = terminal.lock().unwrap();
-                        let mut term = terminal.term.lock();
-                        if let Some(text) = term.selection_to_string() {
-                            // Clear selection (to allow next Ctrl+C to signal)
-                            term.selection = None;
-                            drop(term);
-                            // Mark as dirty
-                            terminal.needs_update = true;
-                            drop(terminal);
-                            return Task::batch([clipboard::write(text), self.update_focus()]);
-                        } else {
-                            // Drop the lock for term so that input_scroll doesn't block forever
-                            drop(term);
-                            // 0x03 is ^C
-                            terminal.input_scroll(b"\x03".as_slice());
-                        }
+            Message::CopyOrSigint(pane_opt) => {
+                if let Some(terminal) = self.terminal_for_pane_opt(pane_opt) {
+                    let mut terminal = terminal.lock().unwrap();
+                    let mut term = terminal.term.lock();
+                    if let Some(text) = term.selection_to_string() {
+                        // Clear selection (to allow next Ctrl+C to signal)
+                        term.selection = None;
+                        drop(term);
+                        // Mark as dirty
+                        terminal.needs_update = true;
+                        drop(terminal);
+                        return Task::batch([clipboard::write(text), self.update_focus()]);
+                    } else {
+                        // Drop the lock for term so that input_scroll doesn't block forever
+                        drop(term);
+                        // 0x03 is ^C
+                        terminal.input_scroll(b"\x03".as_slice());
                     }
                 } else {
                     log::warn!("Failed to get focused pane");
@@ -2247,18 +2250,15 @@ impl Application for App {
                     return cosmic::command::toggle_maximize(window_id);
                 }
             }
-            Message::CopyPrimary(entity_opt) => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = entity_opt.unwrap_or_else(|| tab_model.active());
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let terminal = terminal.lock().unwrap();
-                        let term = terminal.term.lock();
-                        if let Some(text) = term.selection_to_string() {
-                            return Task::batch([
-                                clipboard::write_primary(text),
-                                self.update_focus(),
-                            ]);
-                        }
+            Message::CopyPrimary(pane_opt) => {
+                if let Some(terminal) = self.terminal_for_pane_opt(pane_opt) {
+                    let terminal = terminal.lock().unwrap();
+                    let term = terminal.term.lock();
+                    if let Some(text) = term.selection_to_string() {
+                        return Task::batch([
+                            clipboard::write_primary(text),
+                            self.update_focus(),
+                        ]);
                     }
                 } else {
                     log::warn!("Failed to get focused pane");
@@ -2273,18 +2273,10 @@ impl Application for App {
                                 let mut font_system = font_system().write().unwrap();
                                 font_system.raw().db_mut().set_monospace_family(font_name);
                             }
-                            let panes: Vec<_> = self.pane_model.panes.iter().collect();
-                            for (_pane, tab_model) in panes {
-                                let entities: Vec<_> = tab_model.iter().collect();
-                                for entity in entities {
-                                    if let Some(terminal) =
-                                        tab_model.data::<Mutex<Terminal>>(entity)
-                                    {
-                                        let mut terminal = terminal.lock().unwrap();
-                                        terminal.update_cell_size();
-                                    }
-                                }
-                            }
+                            self.tabs.for_each_terminal(|terminal| {
+                                let mut terminal = terminal.lock().unwrap();
+                                terminal.update_cell_size();
+                            });
 
                             config_set!(font_name, font_name.to_string());
                             self.set_curr_font_weights_and_stretches();
@@ -2360,13 +2352,13 @@ impl Application for App {
                     return dialog.update(*dialog_message);
                 }
             }
-            Message::Drop(Some((pane, entity, data))) => {
-                self.pane_model.set_focus(pane);
+            Message::Drop(Some((pane, data))) => {
+                self.tabs.set_focus(pane);
                 if let Ok(value) = shlex::try_join(data.paths.iter().filter_map(|p| p.to_str())) {
                     return Task::batch([
                         self.update_focus(),
                         cosmic::task::message(action::app(Message::PasteValue(
-                            Some(entity),
+                            Some(pane),
                             value,
                         ))),
                     ]);
@@ -2376,14 +2368,11 @@ impl Application for App {
             Message::Find(find) => {
                 self.find = find;
                 if find {
-                    if let Some(tab_model) = self.pane_model.active() {
-                        let entity = tab_model.active();
-                        if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                            let terminal = terminal.lock().unwrap();
-                            let term = terminal.term.lock();
-                            if let Some(text) = term.selection_to_string() {
-                                self.find_search_value = text;
-                            }
+                    if let Some(terminal) = self.tabs.active_terminal() {
+                        let terminal = terminal.lock().unwrap();
+                        let term = terminal.term.lock();
+                        if let Some(text) = term.selection_to_string() {
+                            self.find_search_value = text;
                         }
                     } else {
                         log::warn!("Failed to get focused pane");
@@ -2397,13 +2386,10 @@ impl Application for App {
             }
             Message::FindNext => {
                 if !self.find_search_value.is_empty()
-                    && let Some(tab_model) = self.pane_model.active()
+                    && let Some(terminal) = self.tabs.active_terminal()
                 {
-                    let entity = tab_model.active();
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let mut terminal = terminal.lock().unwrap();
-                        terminal.search(&self.find_search_value, true);
-                    }
+                    let mut terminal = terminal.lock().unwrap();
+                    terminal.search(&self.find_search_value, true);
                 }
 
                 // Focus correct input
@@ -2411,13 +2397,10 @@ impl Application for App {
             }
             Message::FindPrevious => {
                 if !self.find_search_value.is_empty()
-                    && let Some(tab_model) = self.pane_model.active()
+                    && let Some(terminal) = self.tabs.active_terminal()
                 {
-                    let entity = tab_model.active();
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let mut terminal = terminal.lock().unwrap();
-                        terminal.search(&self.find_search_value, false);
-                    }
+                    let mut terminal = terminal.lock().unwrap();
+                    terminal.search(&self.find_search_value, false);
                 }
 
                 // Focus correct input
@@ -2426,12 +2409,12 @@ impl Application for App {
             Message::FindSearchValueChanged(value) => {
                 self.find_search_value = value;
             }
-            Message::MiddleClick(pane, entity_opt) => {
-                self.pane_model.set_focus(pane);
+            Message::MiddleClick(pane) => {
+                self.tabs.set_focus(pane);
                 return Task::batch([
                     self.update_focus(),
                     clipboard::read_primary().map(move |value_opt| match value_opt {
-                        Some(value) => action::app(Message::PasteValue(entity_opt, value)),
+                        Some(value) => action::app(Message::PasteValue(Some(pane), value)),
                         None => action::none(),
                     }),
                 ]);
@@ -2490,45 +2473,39 @@ impl Application for App {
                 }
             }
             Message::CopyUrlByMenu => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = tab_model.active();
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let mut terminal = terminal.lock().unwrap();
-                        if let Some(url) =
-                            terminal.context_menu.as_ref().and_then(|m| m.link.as_ref())
-                        {
-                            let url = url.to_owned();
-                            terminal.context_menu = None;
-                            terminal.active_regex_match = None;
-                            terminal.needs_update = true;
+                if let Some(terminal) = self.tabs.active_terminal() {
+                    let mut terminal = terminal.lock().unwrap();
+                    if let Some(url) =
+                        terminal.context_menu.as_ref().and_then(|m| m.link.as_ref())
+                    {
+                        let url = url.to_owned();
+                        terminal.context_menu = None;
+                        terminal.active_regex_match = None;
+                        terminal.needs_update = true;
 
-                            return Task::batch([clipboard::write(url), self.update_focus()]);
-                        }
+                        return Task::batch([clipboard::write(url), self.update_focus()]);
                     }
                 }
             }
             Message::LaunchUrlByMenu => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = tab_model.active();
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let mut terminal = terminal.lock().unwrap();
-                        if let Some(url) =
-                            terminal.context_menu.as_ref().and_then(|m| m.link.as_ref())
-                            && let Err(err) = open::that_detached(url)
-                        {
-                            log::warn!("failed to open {:?}: {}", url, err);
-                        }
-                        terminal.context_menu = None;
-                        terminal.active_regex_match = None;
-                        terminal.needs_update = true;
+                if let Some(terminal) = self.tabs.active_terminal() {
+                    let mut terminal = terminal.lock().unwrap();
+                    if let Some(url) =
+                        terminal.context_menu.as_ref().and_then(|m| m.link.as_ref())
+                        && let Err(err) = open::that_detached(url)
+                    {
+                        log::warn!("failed to open {:?}: {}", url, err);
                     }
+                    terminal.context_menu = None;
+                    terminal.active_regex_match = None;
+                    terminal.needs_update = true;
                 }
             }
             Message::Modifiers(modifiers) => {
                 self.modifiers = modifiers;
             }
             Message::MouseEnter(pane) => {
-                self.pane_model.set_focus(pane);
+                self.tabs.set_focus(pane);
                 return self.update_focus();
             }
             Message::ShortcutCaptureCancel => {
@@ -2588,47 +2565,66 @@ impl Application for App {
                 config_set!(opacity, cmp::min(100, opacity));
             }
             Message::PaneClicked(pane) => {
-                self.pane_model.set_focus(pane);
-                let title_task = self.update_title(Some(pane));
+                self.tabs.set_focus(pane);
+                let title_task = self.update_title();
                 return Task::batch([self.update_focus(), title_task]);
             }
             Message::PaneSplit(axis) => {
-                let result = self.pane_model.panes.split(
-                    axis,
-                    self.pane_model.focused(),
-                    segmented_button::ModelBuilder::default().build(),
-                );
+                let result = self.tabs.active_mut().and_then(|tab| {
+                    tab.panes.split(
+                        axis,
+                        tab.focus,
+                        PaneContent {
+                            id: widget::Id::unique(),
+                            terminal: None,
+                        },
+                    )
+                });
                 if let Some((pane, _)) = result {
-                    self.terminal_ids.insert(pane, widget::Id::unique());
-                    let command =
-                        self.create_and_focus_new_terminal(pane, self.get_default_profile(), false);
-                    self.pane_model.panes_created += 1;
+                    // Inherit the working directory from the currently focused
+                    // terminal BEFORE focusing the newly split pane.
+                    let inherited_working_directory = self
+                        .config
+                        .tab_new_inherit_working_directory
+                        .then(|| self.active_terminal_working_directory())
+                        .flatten();
+                    let command = self.create_and_focus_new_terminal(
+                        pane,
+                        self.get_default_profile(),
+                        inherited_working_directory,
+                    );
                     return command;
                 }
             }
             Message::PaneToggleMaximized => {
-                if self.pane_model.panes.maximized().is_some() {
-                    self.pane_model.panes.restore();
-                } else {
-                    self.pane_model.panes.maximize(self.pane_model.focused());
+                if let Some(tab) = self.tabs.active_mut() {
+                    if tab.panes.maximized().is_some() {
+                        tab.panes.restore();
+                    } else {
+                        tab.panes.maximize(tab.focus);
+                    }
                 }
                 return self.update_focus();
             }
             Message::PaneFocusAdjacent(direction) => {
                 if let Some(adjacent) = self
-                    .pane_model
-                    .panes
-                    .adjacent(self.pane_model.focused(), direction)
+                    .tabs
+                    .active_mut()
+                    .and_then(|tab| tab.panes.adjacent(tab.focus, direction))
                 {
-                    self.pane_model.set_focus(adjacent);
-                    return self.update_title(Some(adjacent));
+                    self.tabs.set_focus(adjacent);
+                    return self.update_title();
                 }
             }
             Message::PaneResized(pane_grid::ResizeEvent { split, ratio }) => {
-                self.pane_model.panes.resize(split, ratio);
+                if let Some(tab) = self.tabs.active_mut() {
+                    tab.panes.resize(split, ratio);
+                }
             }
             Message::PaneDragged(pane_grid::DragEvent::Dropped { pane, target }) => {
-                self.pane_model.panes.drop(pane, target);
+                if let Some(tab) = self.tabs.active_mut() {
+                    tab.panes.drop(pane, target);
+                }
             }
             Message::PaneDragged(_) => {}
             #[cfg(feature = "password_manager")]
@@ -2637,36 +2633,30 @@ impl Application for App {
             }
             #[cfg(feature = "password_manager")]
             Message::PasswordPaste(password, pane) => {
-                if let Some(tab_model) = self.pane_model.panes.get(pane) {
-                    let entity = tab_model.active();
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let terminal = terminal.lock().unwrap();
-                        terminal.paste(password.into_unsecure());
-                        terminal.input_scroll(b"\n".as_slice());
-                        self.core.window.show_context = false;
-                        self.password_mgr.clear();
-                    }
+                if let Some(terminal) = self.tabs.pane_terminal(pane) {
+                    let terminal = terminal.lock().unwrap();
+                    terminal.paste(password.into_unsecure());
+                    terminal.input_scroll(b"\n".as_slice());
+                    self.core.window.show_context = false;
+                    self.password_mgr.clear();
                 }
             }
-            Message::Paste(entity_opt) => {
+            Message::Paste(pane_opt) => {
                 return clipboard::read().map(move |value_opt| match value_opt {
-                    Some(value) => action::app(Message::PasteValue(entity_opt, value)),
+                    Some(value) => action::app(Message::PasteValue(pane_opt, value)),
                     None => action::none(),
                 });
             }
-            Message::PastePrimary(entity_opt) => {
+            Message::PastePrimary(pane_opt) => {
                 return clipboard::read_primary().map(move |value_opt| match value_opt {
-                    Some(value) => action::app(Message::PasteValue(entity_opt, value)),
+                    Some(value) => action::app(Message::PasteValue(pane_opt, value)),
                     None => action::none(),
                 });
             }
-            Message::PasteValue(entity_opt, value) => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = entity_opt.unwrap_or_else(|| tab_model.active());
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let terminal = terminal.lock().unwrap();
-                        terminal.paste(value);
-                    }
+            Message::PasteValue(pane_opt, value) => {
+                if let Some(terminal) = self.terminal_for_pane_opt(pane_opt) {
+                    let terminal = terminal.lock().unwrap();
+                    terminal.paste(value);
                 }
                 return self.update_focus();
             }
@@ -2713,24 +2703,20 @@ impl Application for App {
                 return self.save_profiles();
             }
             Message::ProfileOpen(profile_id) => {
-                return self.create_and_focus_new_terminal(
-                    self.pane_model.focused(),
-                    Some(profile_id),
-                    false,
-                );
+                // Nothing to open into before the first tab exists
+                let Some(pane) = self.tabs.active().map(|tab| tab.focus) else {
+                    return Task::none();
+                };
+                return self.create_and_focus_new_terminal(pane, Some(profile_id), None);
             }
             Message::ProfileRemove(profile_id) => {
                 // Reset matching terminals to default profile
-                for (_pane, tab_model) in self.pane_model.panes.iter() {
-                    for entity in tab_model.iter() {
-                        if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                            let mut terminal = terminal.lock().unwrap();
-                            if terminal.profile_id_opt == Some(profile_id) {
-                                terminal.profile_id_opt = None;
-                            }
-                        }
+                self.tabs.for_each_terminal(|terminal| {
+                    let mut terminal = terminal.lock().unwrap();
+                    if terminal.profile_id_opt == Some(profile_id) {
+                        terminal.profile_id_opt = None;
                     }
-                }
+                });
                 if Some(profile_id) == self.get_default_profile() {
                     config_set!(default_profile, None);
                 }
@@ -2767,13 +2753,10 @@ impl Application for App {
                     return self.save_profiles();
                 }
             }
-            Message::SelectAll(entity_opt) => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let entity = entity_opt.unwrap_or_else(|| tab_model.active());
-                    if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                        let mut terminal = terminal.lock().unwrap();
-                        terminal.select_all();
-                    }
+            Message::SelectAll(pane_opt) => {
+                if let Some(terminal) = self.terminal_for_pane_opt(pane_opt) {
+                    let mut terminal = terminal.lock().unwrap();
+                    terminal.select_all();
                 }
                 return self.update_focus();
             }
@@ -2825,65 +2808,55 @@ impl Application for App {
                 }
             }
             Message::TabActivate(entity) => {
-                if let Some(tab_model) = self.pane_model.active_mut() {
-                    tab_model.activate(entity);
-                }
-                return self.update_title(None);
+                self.tabs.model.activate(entity);
+                self.tabs.update_terminal_focus();
+                return self.update_title();
             }
             Message::TabActivateJump(pos) => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    // Length is always at least one so there shouldn't be a division by zero
-                    let len = tab_model.iter().count();
-                    // The typical pattern is that 1-8 selects tabs 1-8 while 9 selects the last tab
-                    let pos = if pos >= 8 || pos > len - 1 {
-                        len - 1
-                    } else {
-                        pos % len
-                    };
+                let len = self.tabs.model.iter().count();
+                if len == 0 {
+                    return Task::none();
+                }
+                // The typical pattern is that 1-8 selects tabs 1-8 while 9 selects the last tab
+                let pos = if pos >= 8 || pos > len - 1 {
+                    len - 1
+                } else {
+                    pos % len
+                };
 
-                    let entity = tab_model.iter().nth(pos);
-                    if let Some(entity) = entity {
-                        return self.update(Message::TabActivate(entity));
-                    }
+                let entity = self.tabs.model.iter().nth(pos);
+                if let Some(entity) = entity {
+                    return self.update(Message::TabActivate(entity));
                 }
             }
             Message::TabClose(entity_opt) => {
-                if let Some(tab_model) = self.pane_model.active_mut() {
-                    let entity = entity_opt.unwrap_or_else(|| tab_model.active());
+                let entity = entity_opt.unwrap_or_else(|| self.tabs.model.active());
 
-                    // Activate closest item if closing active tab
-                    if entity == tab_model.active()
-                        && let Some(position) = tab_model.position(entity)
-                    {
-                        if position > 0 {
-                            tab_model.activate_position(position - 1);
-                        } else {
-                            tab_model.activate_position(position + 1);
-                        }
-                    }
-
-                    // Remove item
-                    tab_model.remove(entity);
-
-                    // If that was the last tab, close current pane
-                    if tab_model.iter().next().is_none() {
-                        if let Some((_state, sibling)) =
-                            self.pane_model.panes.close(self.pane_model.focused())
-                        {
-                            self.terminal_ids.remove(&self.pane_model.focused());
-                            self.pane_model.set_focus(sibling);
-                        } else {
-                            //Last pane, closing window
-                            if let Some(window_id) = self.core.main_window_id() {
-                                return window::close(window_id);
-                            }
-                        }
+                // Activate closest item if closing active tab
+                if entity == self.tabs.model.active()
+                    && let Some(position) = self.tabs.model.position(entity)
+                {
+                    if position > 0 {
+                        self.tabs.model.activate_position(position - 1);
+                    } else {
+                        self.tabs.model.activate_position(position + 1);
                     }
                 }
 
-                return self.update_title(None);
+                // Remove item
+                self.tabs.model.remove(entity);
+
+                // If that was the last tab, close the window
+                if self.tabs.model.iter().next().is_none()
+                    && let Some(window_id) = self.core.main_window_id()
+                {
+                    return window::close(window_id);
+                }
+
+                self.tabs.update_terminal_focus();
+                return self.update_title();
             }
-            Message::TabContextAction(entity, action) => {
+            Message::TabContextAction(pane, action) => {
                 // Close context menu popup
                 let mut tasks = Vec::new();
                 if let Some((_popup_id, _, _, _, _, _)) = self.context_menu_popup.take() {
@@ -2895,9 +2868,7 @@ impl Application for App {
                     }
                 }
                 // Close terminal context menu state
-                if let Some(tab_model) = self.pane_model.active()
-                    && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity)
-                {
+                if let Some(terminal) = self.tabs.pane_terminal(pane) {
                     let mut terminal = terminal.lock().unwrap();
                     //Some actions need the menu_state,
                     //so only clear the position for them.
@@ -2912,7 +2883,7 @@ impl Application for App {
                         }
                     }
                 }
-                tasks.push(self.update(action.message(Some(entity))));
+                tasks.push(self.update(action.message(Some(pane))));
                 return cosmic::Task::batch(tasks);
             }
             Message::TabContextMenu(pane, menu_state) => {
@@ -2930,32 +2901,28 @@ impl Application for App {
                 }
 
                 // Clear all terminal context_menu state
-                for (_, tab_model) in self.pane_model.panes.iter() {
-                    for entity in tab_model.iter() {
-                        if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                            let mut terminal = terminal.lock().unwrap();
-                            terminal.context_menu = None;
-                        }
-                    }
-                }
+                self.tabs.for_each_terminal(|terminal| {
+                    let mut terminal = terminal.lock().unwrap();
+                    terminal.context_menu = None;
+                });
 
                 if let Some(menu_state) = menu_state {
                     if let Some(_position) = menu_state.position {
                         let local_position = menu_state.local_position.unwrap_or(_position);
-                        if let Some(tab_model) = self.pane_model.panes.get(pane) {
-                            let entity = tab_model.active();
+                        {
+                            let entity = self.tabs.active_entity();
                             let link = menu_state.link.clone();
                             let popup_id = window::Id::unique();
 
-                            if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
+                            if let Some(terminal) = self.tabs.pane_terminal(pane) {
                                 let mut terminal = terminal.lock().unwrap();
                                 terminal.context_menu = Some(menu_state);
                             }
 
                             self.context_menu_popup = Some((
                                 popup_id,
-                                pane,
                                 entity,
+                                pane,
                                 link,
                                 widget::Id::unique(),
                                 local_position,
@@ -3000,54 +2967,70 @@ impl Application for App {
                             }
                         }
                     }
-                    self.pane_model.set_focus(pane);
+                    self.tabs.set_focus(pane);
                 }
 
                 return cosmic::Task::batch(tasks);
             }
             Message::TabNew => {
+                // Inherit the working directory from the currently active
+                // terminal BEFORE switching to the new tab.
+                let inherited_working_directory = self.config.tab_new_inherit_working_directory
+                    .then(|| self.active_terminal_working_directory())
+                    .flatten();
+                self.tabs.insert_tab();
+                self.tabs.update_terminal_focus();
                 return self.create_and_focus_new_terminal(
-                    self.pane_model.focused(),
+                    self.tabs.focused(),
                     self.get_default_profile(),
-                    self.config.tab_new_inherit_working_directory,
+                    inherited_working_directory,
                 );
             }
             Message::TabNewNoProfile => {
+                let inherited_working_directory = self.config.tab_new_inherit_working_directory
+                    .then(|| self.active_terminal_working_directory())
+                    .flatten();
+                self.tabs.insert_tab();
+                self.tabs.update_terminal_focus();
                 return self.create_and_focus_new_terminal(
-                    self.pane_model.focused(),
+                    self.tabs.focused(),
                     None,
-                    self.config.tab_new_inherit_working_directory,
+                    inherited_working_directory,
                 );
             }
             Message::TabNext => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let len = tab_model.iter().count();
-                    // Next tab position. Wraps around to 0 (first tab) if the last tab is active.
-                    let pos = tab_model
-                        .position(tab_model.active())
-                        .map(|i| (i as usize + 1) % len)
-                        .expect("at least one tab is always open");
+                let tab_model = &self.tabs.model;
+                let len = tab_model.iter().count();
+                if len == 0 {
+                    return Task::none();
+                }
+                // Next tab position. Wraps around to 0 (first tab) if the last tab is active.
+                let Some(pos) = tab_model
+                    .position(tab_model.active())
+                    .map(|i| (i as usize + 1) % len)
+                else {
+                    return Task::none();
+                };
 
-                    let entity = tab_model.iter().nth(pos);
-                    if let Some(entity) = entity {
-                        return self.update(Message::TabActivate(entity));
-                    }
+                let entity = tab_model.iter().nth(pos);
+                if let Some(entity) = entity {
+                    return self.update(Message::TabActivate(entity));
                 }
             }
             Message::TabPrev => {
-                if let Some(tab_model) = self.pane_model.active() {
-                    let pos = tab_model
-                        .position(tab_model.active())
-                        .and_then(|i| (i as usize).checked_sub(1))
-                        .unwrap_or_else(|| tab_model.iter().count().saturating_sub(1));
+                let tab_model = &self.tabs.model;
+                // Safe on an empty model: nth() then yields None
+                let pos = tab_model
+                    .position(tab_model.active())
+                    .and_then(|i| (i as usize).checked_sub(1))
+                    .unwrap_or_else(|| tab_model.iter().count().saturating_sub(1));
 
-                    let entity = tab_model.iter().nth(pos);
-                    if let Some(entity) = entity {
-                        return self.update(Message::TabActivate(entity));
-                    }
+                let entity = tab_model.iter().nth(pos);
+                if let Some(entity) = entity {
+                    return self.update(Message::TabActivate(entity));
                 }
             }
-            Message::TermEvent(pane, entity, event) => {
+            Message::TermEvent(entity, pane, event) => {
                 match event {
                     TermEvent::Bell => {
                         //TODO: audible or visible bell options?
@@ -3078,9 +3061,7 @@ impl Application for App {
                         }
                     },
                     TermEvent::ColorRequest(index, f) => {
-                        if let Some(tab_model) = self.pane_model.panes.get(pane)
-                            && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity)
-                        {
+                        if let Some(terminal) = self.tabs.find_terminal(entity, pane) {
                             let terminal = terminal.lock().unwrap();
                             let rgb = terminal.effective_color(index);
                             let text = f(rgb);
@@ -3091,60 +3072,54 @@ impl Application for App {
                         //TODO: should we blink the cursor?
                     }
                     TermEvent::Exit => {
-                        return self.update(Message::TabClose(Some(entity)));
+                        return self.close_pane(entity, pane);
                     }
                     TermEvent::PtyWrite(text) => {
-                        if let Some(tab_model) = self.pane_model.panes.get(pane)
-                            && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity)
-                        {
+                        if let Some(terminal) = self.tabs.find_terminal(entity, pane) {
                             let terminal = terminal.lock().unwrap();
                             terminal.input_no_scroll(text.into_bytes());
                         }
                     }
                     TermEvent::ResetTitle => {
-                        if let Some(tab_model) = self.pane_model.panes.get_mut(pane) {
-                            let tab_title_override =
-                                if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                                    let terminal = terminal.lock().unwrap();
-                                    terminal.tab_title_override.clone()
-                                } else {
-                                    None
-                                };
-                            tab_model.text_set(
-                                entity,
-                                tab_title_override.unwrap_or_else(|| fl!("new-terminal")),
-                            );
+                        let tab_title_override = self
+                            .tabs
+                            .find_terminal(entity, pane)
+                            .and_then(|terminal| {
+                                let terminal = terminal.lock().unwrap();
+                                terminal.tab_title_override.clone()
+                            });
+                        self.tabs.model.text_set(
+                            entity,
+                            tab_title_override.unwrap_or_else(|| fl!("new-terminal")),
+                        );
+                        if entity == self.tabs.active_entity() {
+                            return self.update_title();
                         }
-                        return self.update_title(Some(pane));
                     }
                     TermEvent::TextAreaSizeRequest(f) => {
-                        if let Some(tab_model) = self.pane_model.panes.get(pane)
-                            && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity)
-                        {
+                        if let Some(terminal) = self.tabs.find_terminal(entity, pane) {
                             let terminal = terminal.lock().unwrap();
                             let text = f(terminal.size().into());
                             terminal.input_no_scroll(text.into_bytes());
                         }
                     }
                     TermEvent::Title(title) => {
-                        if let Some(tab_model) = self.pane_model.panes.get_mut(pane) {
-                            let has_override =
-                                if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
-                                    let terminal = terminal.lock().unwrap();
-                                    terminal.tab_title_override.is_some()
-                                } else {
-                                    false
-                                };
-                            if !has_override {
-                                tab_model.text_set(entity, title);
-                            }
+                        let has_override = self
+                            .tabs
+                            .find_terminal(entity, pane)
+                            .is_some_and(|terminal| {
+                                let terminal = terminal.lock().unwrap();
+                                terminal.tab_title_override.is_some()
+                            });
+                        if !has_override {
+                            self.tabs.model.text_set(entity, title);
                         }
-                        return self.update_title(Some(pane));
+                        if entity == self.tabs.active_entity() {
+                            return self.update_title();
+                        }
                     }
                     TermEvent::MouseCursorDirty | TermEvent::Wakeup => {
-                        if let Some(tab_model) = self.pane_model.panes.get(pane)
-                            && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity)
-                        {
+                        if let Some(terminal) = self.tabs.find_terminal(entity, pane) {
                             let mut terminal = terminal.lock().unwrap();
                             terminal.needs_update = true;
                         }
@@ -3160,20 +3135,10 @@ impl Application for App {
                     // Close tabs using old terminal event channel
                     log::warn!("terminal event channel reset, closing tabs");
 
-                    // First, close other panes
-                    while let Some((_state, sibling)) =
-                        self.pane_model.panes.close(self.pane_model.focused())
-                    {
-                        self.terminal_ids.remove(&self.pane_model.focused());
-                        self.pane_model.set_focus(sibling);
-                    }
-
-                    // Next, close all tabs in the active pane
-                    if let Some(tab_model) = self.pane_model.active_mut() {
-                        let entities: Vec<_> = tab_model.iter().collect();
-                        for entity in entities {
-                            tab_model.remove(entity);
-                        }
+                    // Close all tabs
+                    let entities: Vec<_> = self.tabs.model.iter().collect();
+                    for entity in entities {
+                        self.tabs.model.remove(entity);
                     }
                 }
 
@@ -3186,7 +3151,7 @@ impl Application for App {
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
                     self.core.window.show_context = !self.core.window.show_context;
-                    self.pane_model.update_terminal_focus();
+                    self.tabs.update_terminal_focus();
 
                     if let ContextPage::KeyboardShortcuts = context_page {
                         self.shortcut_page_toggle();
@@ -3195,7 +3160,7 @@ impl Application for App {
                     #[cfg(feature = "password_manager")]
                     if ContextPage::PasswordManager == context_page {
                         if self.core.window.show_context {
-                            self.password_mgr.pane = Some(self.pane_model.focused());
+                            self.password_mgr.pane = self.tabs.active().map(|tab| tab.focus);
                             return self.password_mgr.refresh_password_list();
                         } else {
                             self.password_mgr.clear();
@@ -3205,7 +3170,7 @@ impl Application for App {
                 } else {
                     self.context_page = context_page;
                     self.core.window.show_context = true;
-                    self.pane_model.unfocus_all_terminals();
+                    self.tabs.unfocus_all_terminals();
                 }
 
                 // Extra work to do to prepare context pages
@@ -3238,11 +3203,11 @@ impl Application for App {
                     return self.update_focus();
                 }
 
-                #[cfg(feature = "password_manager")]
-                if ContextPage::PasswordManager == context_page {
-                    self.password_mgr.pane = Some(self.pane_model.focused());
-                    return self.password_mgr.refresh_password_list();
-                }
+                    #[cfg(feature = "password_manager")]
+                    if ContextPage::PasswordManager == context_page {
+                        self.password_mgr.pane = self.tabs.active().map(|tab| tab.focus);
+                        return self.password_mgr.refresh_password_list();
+                    }
             }
             Message::UpdateDefaultProfile((default, profile_id)) => {
                 config_set!(default_profile, default.then_some(profile_id));
@@ -3274,12 +3239,12 @@ impl Application for App {
             },
             Message::WindowFocused => {
                 if !self.core.window.show_context {
-                    self.pane_model.update_terminal_focus();
+                    self.tabs.update_terminal_focus();
                 }
                 return self.update_focus();
             }
             Message::WindowUnfocused => {
-                self.pane_model.unfocus_all_terminals();
+                self.tabs.unfocus_all_terminals();
             }
             Message::ZoomIn => {
                 return self.update_render_active_pane_zoom(message);
@@ -3292,12 +3257,11 @@ impl Application for App {
                 return self.update_config();
             }
             Message::ContextMenuPopupClosed(id) => {
-                if let Some((popup_id, pane, entity, _, _, _)) = &self.context_menu_popup
+                if let Some((popup_id, entity, pane, _, _, _)) = &self.context_menu_popup
                     && id == *popup_id
                 {
                     // Clear link underline on the terminal
-                    if let Some(tab_model) = self.pane_model.panes.get(*pane)
-                        && let Some(terminal) = tab_model.data::<Mutex<Terminal>>(*entity)
+                    if let Some(terminal) = self.tabs.find_terminal(*entity, *pane)
                     {
                         let mut terminal = terminal.lock().unwrap();
                         terminal.context_menu = None;
@@ -3312,19 +3276,12 @@ impl Application for App {
                     cosmic::app::Action::Surface(a),
                 ));
             }
-            Message::ReorderTab(
-                pane,
-                ReorderEvent {
-                    dragged,
-                    target,
-                    position,
-                },
-            ) => {
-                let Some(p) = self.pane_model.panes.get_mut(pane) else {
-                    log::error!("Failed to find reordered tab model.");
-                    return Task::none();
-                };
-                _ = p.reorder(dragged, target, position);
+            Message::ReorderTab(ReorderEvent {
+                dragged,
+                target,
+                position,
+            }) => {
+                _ = self.tabs.model.reorder(dragged, target, position);
             }
         }
 
@@ -3423,12 +3380,12 @@ impl Application for App {
     }
 
     fn view_window(&self, window_id: window::Id) -> Element<'_, Message> {
-        if let Some((popup_id, _pane, entity, ref link, ref autosize_id, _)) =
+        if let Some((popup_id, _entity, pane, ref link, ref autosize_id, _)) =
             self.context_menu_popup
             && window_id == popup_id
         {
             return widget::autosize::autosize(
-                menu::context_menu(&self.config, &self.key_binds, entity, link.clone()),
+                menu::context_menu(&self.config, &self.key_binds, pane, link.clone()),
                 autosize_id.clone(),
             )
             .into();
@@ -3449,8 +3406,11 @@ impl Application for App {
             ..
         } = cosmic.spacing;
 
-        let show_pane_borders =
-            self.config.show_pane_borders && self.pane_model.panes.panes.len() > 1;
+        let Some(tab) = self.tabs.active() else {
+            return widget::space::horizontal().into();
+        };
+
+        let show_pane_borders = self.config.show_pane_borders && tab.panes.panes.len() > 1;
         let pane_corner_radius: iced::border::Radius = {
             let pad = f32::from(space_xxxs) / 2.0;
             cosmic
@@ -3458,51 +3418,17 @@ impl Application for App {
                 .map(|r| if r > 0.0 { r + pad } else { 0.0 })
                 .into()
         };
-        let pane_grid = PaneGrid::new(&self.pane_model.panes, |pane, tab_model, _is_maximized| {
+        let focused_pane = tab.focus;
+        let pane_grid = PaneGrid::new(&tab.panes, |pane, content, _is_maximized| {
             let mut tab_column = widget::column::with_capacity(1);
 
-            if tab_model.iter().count() > 1 {
-                tab_column = tab_column.push(
-                    widget::container(
-                        widget::tab_bar::horizontal(tab_model)
-                            .enable_tab_drag(String::from("x-cosmic-term/tab"))
-                            .on_reorder(move |event| Message::ReorderTab(pane, event))
-                            .tab_drag_threshold(25.)
-                            .button_height(32)
-                            .button_spacing(space_xxs)
-                            .on_activate(Message::TabActivate)
-                            .on_close(|entity| Message::TabClose(Some(entity))),
-                    )
-                    .class(style::Container::Custom(Box::new(|theme| {
-                        let cosmic = theme.cosmic();
-                        cosmic::iced::widget::container::Style {
-                            icon_color: Some(Color::from(cosmic.background(theme.transparent).on)),
-                            text_color: Some(Color::from(cosmic.background(theme.transparent).on)),
-                            background: Some(iced::Background::Color(
-                                cosmic.background(theme.transparent).base.into(),
-                            )),
-                            border: iced::Border::default(),
-                            shadow: iced::Shadow::default(),
-                            snap: true,
-                        }
-                    })))
-                    .width(Length::Fill),
-                );
-            }
-
-            let entity = tab_model.active();
-            let entity_middle_click = tab_model.active();
-            let terminal_id = self
-                .terminal_ids
-                .get(&pane)
-                .cloned()
-                .unwrap_or_else(widget::Id::unique);
-            if let Some(terminal) = tab_model.data::<Mutex<Terminal>>(entity) {
+            if let Some(terminal) = &content.terminal {
+                let terminal_id = content.id.clone();
                 let mut terminal_box = terminal_box(terminal, &self.key_binds)
                     .id(terminal_id)
                     .disabled(self.core.window.show_context)
                     .on_context_menu(move |menu_state| Message::TabContextMenu(pane, menu_state))
-                    .on_middle_click(move || Message::MiddleClick(pane, Some(entity_middle_click)))
+                    .on_middle_click(move || Message::MiddleClick(pane))
                     .on_open_hyperlink(Some(Box::new(Message::LaunchUrl)))
                     .on_window_focused(|| Message::WindowFocused)
                     .on_window_unfocused(|| Message::WindowUnfocused)
@@ -3541,7 +3467,7 @@ impl Application for App {
 
                 let tab_element: Element<'_, Message> = if !use_wayland_popup {
                     // Fallback: render context menu as an inline popover
-                    if let Some((_, popup_pane, popup_entity, ref link, _, point)) =
+                    if let Some((_, _, popup_pane, ref link, _, point)) =
                         self.context_menu_popup
                     {
                         if pane == popup_pane {
@@ -3550,7 +3476,7 @@ impl Application for App {
                                 .popup(menu::context_menu(
                                     &self.config,
                                     &self.key_binds,
-                                    popup_entity,
+                                    popup_pane,
                                     link.clone(),
                                 ))
                                 .position(widget::popover::Position::Point(point));
@@ -3568,7 +3494,7 @@ impl Application for App {
             }
 
             //Only draw find in the currently focused pane
-            if self.find && pane == self.pane_model.focused() {
+            if self.find && pane == focused_pane {
                 let find_input = widget::text_input::text_input(
                     fl!("find-placeholder"),
                     &self.find_search_value,
@@ -3631,7 +3557,7 @@ impl Application for App {
             DndDestination::for_data::<DndDrop>(tab_column, move |data, action| {
                 if let Some(data) = data {
                     if action == DndAction::Move {
-                        Message::Drop(Some((pane, entity, data)))
+                        Message::Drop(Some((pane, data)))
                     } else {
                         log::warn!("unsuppported action: {:?}", action);
                         Message::Drop(None)
@@ -3648,15 +3574,74 @@ impl Application for App {
         .on_resize(space_xxs, Message::PaneResized)
         .on_drag(Message::PaneDragged);
 
-        //TODO: apply window border radius xs at bottom of window
-        if show_pane_borders {
-            // Each pane draws its own border stroke. Painting a filled
-            // container behind the grid instead would stack its alpha with the
-            // translucent panes and wash out the blurred backdrop.
-            pane_grid.spacing(space_xxxs).into()
+        // Window-level tab bar, drawn below the header bar. It stays visible
+        // even with a single tab. enable_tab_drag is required for
+        // drag-reordering to work at all.
+        let tab_bar_row = widget::container(
+            widget::tab_bar::horizontal(&self.tabs.model)
+                .enable_tab_drag(String::from("x-cosmic-term/tab"))
+                .on_reorder(Message::ReorderTab)
+                .tab_drag_threshold(25.)
+                .button_height(32)
+                .button_spacing(space_xxs)
+                .on_activate(Message::TabActivate)
+                .on_close(|entity| Message::TabClose(Some(entity))),
+        )
+        .class(style::Container::Custom(Box::new(|theme| {
+            let cosmic = theme.cosmic();
+            cosmic::iced::widget::container::Style {
+                icon_color: Some(Color::from(cosmic.background(theme.transparent).on)),
+                text_color: Some(Color::from(cosmic.background(theme.transparent).on)),
+                background: Some(iced::Background::Color(
+                    cosmic.background(theme.transparent).base.into(),
+                )),
+                border: iced::Border::default(),
+                shadow: iced::Shadow::default(),
+                snap: true,
+            }
+        })))
+        .width(Length::Fill);
+
+        // Background color of the terminal theme, so divider gaps between
+        // split panes blend with the terminals instead of the window backdrop.
+        // COSMIC themes intentionally leave the terminal background unset;
+        // terminals then fall back to WINDOW_BG_COLOR, so mirror that here.
+        let terminal_bg = {
+            let color_scheme_kind = self.config.color_scheme_kind(t);
+            self.themes
+                .get(&self.config.syntax_theme(color_scheme_kind, None))
+                .and_then(|colors| {
+                    colors[alacritty_terminal::vte::ansi::NamedColor::Background]
+                })
+                .map(|rgb| iced::Color::from_rgb8(rgb.r, rgb.g, rgb.b))
+                .unwrap_or_else(|| {
+                    let data =
+                        terminal::WINDOW_BG_COLOR.load(std::sync::atomic::Ordering::SeqCst);
+                    iced::Color::from_rgba8(
+                        ((data >> 16) & 0xFF) as u8,
+                        ((data >> 8) & 0xFF) as u8,
+                        (data & 0xFF) as u8,
+                        1.0,
+                    )
+                })
+        };
+
+        let grid: Element<'_, Message> = if show_pane_borders {
+            widget::container(pane_grid.spacing(space_xxxs))
+                .style(move |_| cosmic::iced::widget::container::Style {
+                    background: Some(iced::Background::Color(terminal_bg)),
+                    ..Default::default()
+                })
+                .into()
         } else {
             pane_grid.into()
-        }
+        };
+
+        //TODO: apply window border radius xs at bottom of window
+        widget::column::with_capacity(2)
+            .push(tab_bar_row)
+            .push(grid)
+            .into()
     }
 
     fn system_theme_update(
