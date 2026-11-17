@@ -888,6 +888,15 @@ impl Terminal {
                 }
 
                 let grid = term.grid();
+
+                // Resolve the selection once per update, not once per cell. For Semantic and
+                // Lines selections, to_range walks across soft-wrapped lines, which can cover
+                // the whole scrollback and freeze the UI if repeated for every visible cell.
+                let selection_range = term
+                    .selection
+                    .as_ref()
+                    .and_then(|selection| selection.to_range(&term));
+
                 for indexed in grid.display_iter() {
                     if indexed.point.line != last_point.unwrap_or(indexed.point).line {
                         while line_i >= buffer.lines.len() {
@@ -994,8 +1003,7 @@ impl Terminal {
                     }
 
                     // Change color if selected
-                    if let Some(selection) = &term.selection
-                        && let Some(range) = selection.to_range(&term)
+                    if let Some(range) = &selection_range
                         && range.contains(indexed.point)
                     {
                         //TODO: better handling of selection
